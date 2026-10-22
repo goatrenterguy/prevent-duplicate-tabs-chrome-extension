@@ -9,10 +9,16 @@ let onlyNewTabs = true;
 let urlRules = [];
 let compiledUrlRules = [];
 
-// The badge counts in blue (the same blue as the "switched" notice) while
-// duplicates are being prevented, and says OFF in grey while switched off.
-const BADGE_ACTIVE_COLOR = '#0a84ff';
-const BADGE_OFF_COLOR = '#8e8e93';
+// The accent color, chosen in the popup, is used for the toolbar icon, the
+// badge and the "switched" notice. While the extension is switched off the icon
+// and badge turn grey and the badge says OFF.
+const DEFAULT_ACCENT_COLOR = '#0a84ff';
+const OFF_COLOR = '#8e8e93';
+let accentColor = DEFAULT_ACCENT_COLOR;
+
+function isAccentColor(value) {
+    return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+}
 
 // Badge bookkeeping: the recount generation and what the badge currently shows.
 let badgeGeneration = 0;
@@ -51,9 +57,10 @@ const newTabsReady = chrome.storage.session.get('newTabs').then(stored => {
 // never land before the persisted values have been loaded (that would overwrite
 // them with stale defaults), and a tab event must never be judged against the
 // defaults either.
-const stateReady = chrome.storage.local.get(['active', 'onlyNewTabs', 'urlRules', 'preventedDuplicatesCount']).then(stored => {
+const stateReady = chrome.storage.local.get(['active', 'onlyNewTabs', 'accentColor', 'urlRules', 'preventedDuplicatesCount']).then(stored => {
     active = stored.active ?? true;
     onlyNewTabs = stored.onlyNewTabs ?? true;
+    accentColor = isAccentColor(stored.accentColor) ? stored.accentColor : DEFAULT_ACCENT_COLOR;
     preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
     try {
         compiledUrlRules = compileUrlRules(stored.urlRules ?? []);
@@ -79,6 +86,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 persistState();
                 // Switched off, the badge says OFF instead of counting.
                 void updateBadge();
+                void updateIcon();
                 sendResponse(currentState());
             })
             .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the extension', e));
@@ -92,6 +100,20 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 sendResponse(currentState());
             })
             .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the new tabs option', e));
+        return true;
+    }
+    if (request.action === 'SetAccentColor') {
+        void stateReady
+            .then(() => {
+                if (isAccentColor(request.accentColor)) {
+                    accentColor = request.accentColor.toLowerCase();
+                    persistState();
+                    void updateBadge();
+                    void updateIcon();
+                }
+                sendResponse(currentState());
+            })
+            .catch(e => console.warn('Prevent Duplicate Tabs: could not change the color', e));
         return true;
     }
     if (request.action === 'SetUrlRules') {
@@ -199,6 +221,7 @@ function setNewTab(tabId, isNew) {
 }
 
 void updateBadge();
+void updateIcon();
 
 async function deduplicateExistingTabs() {
     const tabs = await chrome.tabs.query({});
@@ -273,7 +296,10 @@ async function switchToExistingTab(currentTabId, key) {
 function showSwitchedNotice(tabId) {
     chrome.scripting.executeScript({
         target: { tabId },
-        func: () => {
+        // The accent color is checked to be a #rrggbb color before it is saved,
+        // so it is safe to put into the notice's stylesheet.
+        args: [accentColor],
+        func: accent => {
             const id = '__prevent_duplicate_tabs_notice__';
             document.getElementById(id)?.remove();
 
@@ -320,7 +346,7 @@ function showSwitchedNotice(tabId) {
                     width: 20px;
                     height: 20px;
                     border-radius: 50%;
-                    background: #0a84ff;
+                    background: ${accent};
                 }
                 .host { color: #86868b; }
                 @media (prefers-color-scheme: dark) {
@@ -342,22 +368,22 @@ function showSwitchedNotice(tabId) {
             toast.className = 'toast';
             toast.setAttribute('role', 'status');
 
-            // A small "return" arrow: you were sent back to a tab you already had.
+            // The extension's own icon, a tab in front of a tab, drawn in white.
             const svgNs = 'http://www.w3.org/2000/svg';
             const icon = document.createElementNS(svgNs, 'svg');
             icon.setAttribute('viewBox', '0 0 16 16');
             icon.setAttribute('width', '12');
             icon.setAttribute('height', '12');
-            for (const d of ['M6 4.5 3 7.5l3 3', 'M3.5 7.5H10a3 3 0 0 1 0 6H8.5']) {
-                const path = document.createElementNS(svgNs, 'path');
-                path.setAttribute('d', d);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', 'white');
-                path.setAttribute('stroke-width', '1.8');
-                path.setAttribute('stroke-linecap', 'round');
-                path.setAttribute('stroke-linejoin', 'round');
-                icon.append(path);
-            }
+            const outline = document.createElementNS(svgNs, 'path');
+            outline.setAttribute('d', 'M2 13.5V2.5h5.25l2 3H14v8Z');
+            outline.setAttribute('fill', 'none');
+            outline.setAttribute('stroke', 'white');
+            outline.setAttribute('stroke-width', '1.7');
+            outline.setAttribute('stroke-linejoin', 'round');
+            const backTab = document.createElementNS(svgNs, 'path');
+            backTab.setAttribute('d', 'M8.9 1.65H14.85v4.7H10.6Z');
+            backTab.setAttribute('fill', 'white');
+            icon.append(outline, backTab);
             const iconWrap = document.createElement('span');
             iconWrap.className = 'icon';
             iconWrap.append(icon);
@@ -388,13 +414,14 @@ function showSwitchedNotice(tabId) {
 }
 
 function currentState() {
-    return { active, onlyNewTabs, urlRules, preventedDuplicatesCount };
+    return { active, onlyNewTabs, accentColor, urlRules, preventedDuplicatesCount };
 }
 
 function persistState() {
     chrome.storage.local.set({
         active,
         onlyNewTabs,
+        accentColor,
         urlRules,
         preventedDuplicatesCount,
     }).catch(e => console.warn('Prevent Duplicate Tabs: could not save the state', e));
@@ -414,7 +441,7 @@ async function updateBadge() {
         const duplicates = active ? countDuplicates(await chrome.tabs.query({}), compiledUrlRules) : 0;
         // Chrome truncates badge text to ~4 characters.
         const text = !active ? 'OFF' : duplicates === 0 ? '' : duplicates >= 1000 ? '999+' : `${duplicates}`;
-        const color = active ? BADGE_ACTIVE_COLOR : BADGE_OFF_COLOR;
+        const color = active ? accentColor : OFF_COLOR;
         if (generation !== badgeGeneration) return;
         if (text !== lastBadgeText) {
             lastBadgeText = text;
@@ -426,5 +453,37 @@ async function updateBadge() {
         }
     } catch (e) {
         console.warn('Prevent Duplicate Tabs: could not update the badge', e);
+    }
+}
+
+// The packaged icons are drawn in the default blue. The toolbar icon is redrawn
+// in the accent color, or grey while switched off, by painting that color over
+// the icon's shape. Chrome remembers the drawn icon until it restarts or the
+// extension reloads, and the worker redraws it each time it starts. Workers
+// have no DOM, so this needs OffscreenCanvas; the tests run without one.
+let iconGeneration = 0;
+
+async function updateIcon() {
+    if (typeof OffscreenCanvas === 'undefined') return;
+    const generation = ++iconGeneration;
+    try {
+        await stateReady;
+        const color = active ? accentColor : OFF_COLOR;
+        const imageData = {};
+        for (const size of [16, 32]) {
+            const response = await fetch(chrome.runtime.getURL(`icon-${size}.png`));
+            const bitmap = await createImageBitmap(await response.blob());
+            const canvas = new OffscreenCanvas(size, size);
+            const context = canvas.getContext('2d');
+            context.drawImage(bitmap, 0, 0, size, size);
+            context.globalCompositeOperation = 'source-in';
+            context.fillStyle = color;
+            context.fillRect(0, 0, size, size);
+            imageData[size] = context.getImageData(0, 0, size, size);
+        }
+        if (generation !== iconGeneration) return;
+        await chrome.action.setIcon({ imageData });
+    } catch (e) {
+        console.warn('Prevent Duplicate Tabs: could not update the icon', e);
     }
 }

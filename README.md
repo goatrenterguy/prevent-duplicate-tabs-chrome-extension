@@ -35,7 +35,7 @@ No build step is needed: the extension is plain JavaScript. The tests need no de
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
 * The toolbar badge shows the number of duplicate tabs that are currently open, or `OFF` while the extension is switched off.
 
-When you are switched to an existing tab, a small "Switched to existing tab" notice with the site's name appears at the top of that page for a couple of seconds, in light or dark to match your system. The `scripting` permission and access to http(s) sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
+When you are switched to an existing tab, a small "Switched to existing tab" notice with the site's name appears at the top of that page for a couple of seconds, in light or dark to match your system. The toolbar icon, the badge and the notice share one color, blue by default, which you can change from the popup: pick a preset or any color from the rainbow swatch. The icon and badge turn grey while the extension is switched off. The `scripting` permission and access to http(s) sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
 
 ## URL matching rules
 

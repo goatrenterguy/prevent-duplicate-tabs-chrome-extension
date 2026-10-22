@@ -34,7 +34,23 @@
                 height: 18px; width: 18px; left: 2px; top: 2px;
                 background: white; border-radius: 50%; transition: .15s;
             }
-            input:checked + .slider { background-color: #0a84ff; }
+            :root { --accent: #0a84ff; }
+            input:checked + .slider { background-color: var(--accent); }
+            .swatches { display: flex; align-items: center; gap: 6px; }
+            .swatch {
+                width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
+                background: var(--swatch); cursor: pointer;
+                box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+            }
+            .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
+            .swatch:active { background: var(--swatch); }
+            .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px white, 0 0 0 3.5px var(--swatch); }
+            .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+            .custom { position: relative; width: 18px; height: 18px; flex: none; }
+            .custom .swatch { position: absolute; inset: 0; pointer-events: none;
+                background: conic-gradient(#ff375f, #ff9f0a, #ffd60a, #30d158, #0a84ff, #bf5af2, #ff375f); }
+            .custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+            .custom.selected .swatch { box-shadow: 0 0 0 2px white, 0 0 0 3.5px var(--accent); }
             input:checked + .slider:before { transform: translateX(18px); }
             .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
             a { font-size: 13px; color: #1a73e8; text-decoration: none; }
@@ -85,6 +101,13 @@
         <div class="hint">
             On: only tabs you just opened are switched away from. Off: following a link or going back in any tab can close it, if that page is open elsewhere.
         </div>
+        <hr />
+        <div class="row">
+            <span class="label">Color</span>
+            <!-- Filled in by popup.js from its list of preset colors. -->
+            <div class="swatches" id="swatches" role="radiogroup" aria-label="Color"></div>
+        </div>
+        <div class="hint">Used for the toolbar icon, the badge and the "switched" notice.</div>
         <hr />
         <div class="row">
             <span class="label" id="rulesLabel">URL matching rules</span>

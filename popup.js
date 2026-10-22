@@ -6,9 +6,67 @@ const openRules = document.getElementById('openRules');
 const counter = document.getElementById('counter');
 const deduplicate = document.getElementById('deduplicate');
 const status = document.getElementById('status');
+const swatches = document.getElementById('swatches');
 
-function render({ active, onlyNewTabs, urlRules, preventedDuplicatesCount }) {
+const PRESET_COLORS = [
+    ['Blue', '#0a84ff'],
+    ['Indigo', '#5e5ce6'],
+    ['Purple', '#bf5af2'],
+    ['Pink', '#ff375f'],
+    ['Orange', '#ff9f0a'],
+    ['Green', '#30d158'],
+    ['Graphite', '#636366'],
+];
+
+const setAccentColor = async accentColor => {
+    try {
+        render(await chrome.runtime.sendMessage({ action: 'SetAccentColor', accentColor }));
+    } catch (e) {
+        showError(e);
+    }
+};
+
+const presetButtons = PRESET_COLORS.map(([name, color]) => {
+    const button = document.createElement('button');
+    button.className = 'swatch';
+    button.title = name;
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-label', name);
+    button.style.setProperty('--swatch', color);
+    button.dataset.color = color;
+    button.addEventListener('click', () => setAccentColor(color));
+    swatches.append(button);
+    return button;
+});
+
+// Any other color comes from the system color picker behind the rainbow swatch.
+const custom = document.createElement('label');
+custom.className = 'custom';
+custom.title = 'Custom color';
+const customSwatch = document.createElement('span');
+customSwatch.className = 'swatch';
+const customInput = document.createElement('input');
+customInput.type = 'color';
+customInput.setAttribute('aria-label', 'Custom color');
+customInput.addEventListener('input', () => setAccentColor(customInput.value));
+custom.append(customSwatch, customInput);
+swatches.append(custom);
+
+function renderAccentColor(accentColor) {
+    document.documentElement.style.setProperty('--accent', accentColor);
+    let isPreset = false;
+    for (const button of presetButtons) {
+        const selected = button.dataset.color === accentColor;
+        button.setAttribute('aria-checked', String(selected));
+        isPreset ||= selected;
+    }
+    custom.classList.toggle('selected', !isPreset);
+    customInput.value = accentColor;
+}
+
+function render({ active, onlyNewTabs, accentColor, urlRules, preventedDuplicatesCount }) {
     toggle.checked = active;
+    renderAccentColor(accentColor);
     onlyNewTabsToggle.checked = onlyNewTabs;
     stateLabel.textContent = active ? 'Enabled' : 'Disabled';
     const ruleCount = Array.isArray(urlRules) ? urlRules.length : 0;

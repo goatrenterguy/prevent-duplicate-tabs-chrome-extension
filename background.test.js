@@ -302,3 +302,24 @@ test('a prerendered tab swapped in for a new tab is checked', async () => {
     await worker.settle();
     assert.deepEqual(worker.actions, ['activate 1', 'close 6']);
 });
+
+test('a chosen color is stored and used for the badge, and anything else is refused', async () => {
+    const stored = {};
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/')], stored);
+    await worker.settle();
+    const state = await send(worker, { action: 'SetAccentColor', accentColor: '#FF375F' });
+    await worker.settle();
+    assert.equal(state.accentColor, '#ff375f');
+    assert.equal(stored.accentColor, '#ff375f');
+    assert.equal(worker.badgeColors.at(-1), '#ff375f');
+
+    const refused = await send(worker, { action: 'SetAccentColor', accentColor: 'red; background: url(x)' });
+    assert.equal(refused.accentColor, '#ff375f');
+    assert.equal(stored.accentColor, '#ff375f');
+});
+
+test('a stored color that is not a #rrggbb color falls back to the default', async () => {
+    const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/')], { accentColor: 'red' });
+    await worker.settle();
+    assert.deepEqual(worker.badgeColors, ['#0a84ff']);
+});
