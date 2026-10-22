@@ -4,23 +4,54 @@
         <meta charset="utf-8" />
         <title>Prevent Duplicate Tabs - URL matching rules</title>
         <style>
+            /* The same light and dark colors as the popup. */
+            :root {
+                color-scheme: light dark;
+                --bg: #ffffff;
+                --text: #1a1a1a;
+                --secondary: #444444;
+                --muted: #666666;
+                --field-bg: #ffffff;
+                --button-bg: #f4f4f5;
+                --button-hover: #ececee;
+                --border: #e2e2e5;
+                --ok: #34a853;
+                --error: #c0392b;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #202124;
+                    --text: #e8eaed;
+                    --secondary: #bdc1c6;
+                    --muted: #9aa0a6;
+                    --field-bg: #292a2d;
+                    --button-bg: #2d2e31;
+                    --button-hover: #35363a;
+                    --border: #3c4043;
+                    --ok: #81c995;
+                    --error: #f28b82;
+                }
+            }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 max-width: 760px;
                 padding: 24px;
                 margin: 0 auto;
-                color: #1a1a1a;
+                color: var(--text);
+                background: var(--bg);
             }
             h1 { font-size: 18px; margin: 0 0 12px 0; font-weight: 600; }
-            p { font-size: 13px; line-height: 1.5; color: #444; }
-            code { background: #f4f4f5; padding: 1px 4px; border-radius: 4px; }
+            p { font-size: 13px; line-height: 1.5; color: var(--secondary); }
+            code { background: var(--button-bg); padding: 1px 4px; border-radius: 4px; }
             textarea {
                 box-sizing: border-box;
                 width: 100%;
                 min-height: 320px;
                 padding: 10px;
                 font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-                border: 1px solid #e2e2e5;
+                color: var(--text);
+                background: var(--field-bg);
+                border: 1px solid var(--border);
                 border-radius: 8px;
                 resize: vertical;
             }
@@ -28,23 +59,23 @@
                 margin-top: 10px;
                 padding: 8px 16px;
                 font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                color: #1a1a1a;
-                background: #f4f4f5;
-                border: 1px solid #e2e2e5;
+                color: var(--text);
+                background: var(--button-bg);
+                border: 1px solid var(--border);
                 border-radius: 8px;
                 cursor: pointer;
             }
-            button:hover { background: #ececee; }
+            button:hover { background: var(--button-hover); }
             button:disabled { opacity: 0.6; cursor: default; }
-            .status { font-size: 12px; color: #666; margin-top: 8px; min-height: 16px; white-space: pre-wrap; }
-            .status.ok { color: #34a853; }
-            .status.error { color: #c0392b; }
+            .status { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px; white-space: pre-wrap; }
+            .status.ok { color: var(--ok); }
+            .status.error { color: var(--error); }
             h2 { font-size: 14px; margin: 24px 0 8px 0; font-weight: 600; }
             table { border-collapse: collapse; font-size: 12px; }
-            td { padding: 3px 12px 3px 0; vertical-align: top; color: #444; }
+            td { padding: 3px 12px 3px 0; vertical-align: top; color: var(--secondary); }
             td:first-child { white-space: nowrap; }
             .example {
-                border: 1px solid #e2e2e5;
+                border: 1px solid var(--border);
                 border-radius: 8px;
                 padding: 10px 12px;
                 margin-bottom: 8px;
@@ -55,14 +86,14 @@
             }
             .example button { margin-top: 0; flex-shrink: 0; }
             .example-name { font-size: 13px; font-weight: 600; }
-            .example-note { font-size: 12px; color: #666; margin-top: 2px; }
+            .example-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
             .example pre {
                 font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
                 margin: 6px 0 0 0;
                 white-space: pre-wrap;
                 word-break: break-all;
             }
-            .example .same { font-size: 11px; color: #666; margin-top: 6px; word-break: break-all; }
+            .example .same { font-size: 11px; color: var(--muted); margin-top: 6px; word-break: break-all; }
         </style>
     </head>
     <body>

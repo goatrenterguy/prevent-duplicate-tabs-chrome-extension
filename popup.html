@@ -4,12 +4,45 @@
         <meta charset="utf-8" />
         <title>Prevent Duplicate Tabs</title>
         <style>
+            :root {
+                color-scheme: light dark;
+                --accent: #0a84ff;
+                --bg: #ffffff;
+                --text: #1a1a1a;
+                --muted: #666666;
+                --divider: #eeeeee;
+                --link: #1a73e8;
+                --switch-off: #cccccc;
+                --button-bg: #f4f4f5;
+                --button-hover: #ececee;
+                --button-active: #e0e0e3;
+                --button-border: #e2e2e5;
+                --ok: #34a853;
+                --error: #c0392b;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #202124;
+                    --text: #e8eaed;
+                    --muted: #9aa0a6;
+                    --divider: #3c4043;
+                    --link: #8ab4f8;
+                    --switch-off: #5f6368;
+                    --button-bg: #2d2e31;
+                    --button-hover: #35363a;
+                    --button-active: #3c3d41;
+                    --button-border: #3c4043;
+                    --ok: #81c995;
+                    --error: #f28b82;
+                }
+            }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
                 width: 240px;
                 padding: 14px 16px;
                 margin: 0;
-                color: #1a1a1a;
+                color: var(--text);
+                background: var(--bg);
             }
             h1 {
                 font-size: 14px;
@@ -27,15 +60,15 @@
             .switch input { opacity: 0; width: 0; height: 0; }
             .slider {
                 position: absolute; inset: 0; cursor: pointer;
-                background-color: #ccc; border-radius: 22px; transition: .15s;
+                background-color: var(--switch-off); border-radius: 22px; transition: .15s;
             }
             .slider:before {
                 position: absolute; content: "";
                 height: 18px; width: 18px; left: 2px; top: 2px;
                 background: white; border-radius: 50%; transition: .15s;
             }
-            :root { --accent: #0a84ff; }
             input:checked + .slider { background-color: var(--accent); }
+            input:checked + .slider:before { transform: translateX(18px); }
             .swatches { display: flex; align-items: center; gap: 6px; }
             .swatch {
                 width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%;
@@ -44,35 +77,35 @@
             }
             .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
             .swatch:active { background: var(--swatch); }
-            .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px white, 0 0 0 3.5px var(--swatch); }
+            /* The gap between a selected swatch and its ring is the page background. */
+            .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--swatch); }
             .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
             .custom { position: relative; width: 18px; height: 18px; flex: none; }
             .custom .swatch { position: absolute; inset: 0; pointer-events: none;
                 background: conic-gradient(#ff375f, #ff9f0a, #ffd60a, #30d158, #0a84ff, #bf5af2, #ff375f); }
             .custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
-            .custom.selected .swatch { box-shadow: 0 0 0 2px white, 0 0 0 3.5px var(--accent); }
-            input:checked + .slider:before { transform: translateX(18px); }
-            .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
-            a { font-size: 13px; color: #1a73e8; text-decoration: none; }
+            .custom.selected .swatch { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--accent); }
+            .hint { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+            a { font-size: 13px; color: var(--link); text-decoration: none; }
             a:hover { text-decoration: underline; }
-            .stat { font-size: 11px; color: #666; margin-top: 8px; }
-            hr { border: 0; border-top: 1px solid #eee; margin: 12px 0; }
+            .stat { font-size: 11px; color: var(--muted); margin-top: 8px; }
+            hr { border: 0; border-top: 1px solid var(--divider); margin: 12px 0; }
             button {
                 width: 100%;
                 padding: 8px 10px;
                 font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                color: #1a1a1a;
-                background: #f4f4f5;
-                border: 1px solid #e2e2e5;
+                color: var(--text);
+                background: var(--button-bg);
+                border: 1px solid var(--button-border);
                 border-radius: 8px;
                 cursor: pointer;
             }
-            button:hover { background: #ececee; }
-            button:active { background: #e0e0e3; }
+            button:hover { background: var(--button-hover); }
+            button:active { background: var(--button-active); }
             button:disabled { opacity: 0.6; cursor: default; }
-            .status { font-size: 11px; color: #666; margin-top: 8px; min-height: 14px; }
-            .status.ok { color: #34a853; }
-            .status.error { color: #c0392b; }
+            .status { font-size: 11px; color: var(--muted); margin-top: 8px; min-height: 14px; }
+            .status.ok { color: var(--ok); }
+            .status.error { color: var(--error); }
         </style>
     </head>
     <body>
