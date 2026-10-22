@@ -119,3 +119,15 @@ test('findExistingTab finds the oldest other tab with the same URL', () => {
     assert.equal(findExistingTab([tab(2, 'https://a.example/')], 2, key), undefined);
     assert.equal(findExistingTab(tabs, 9, duplicateKey(tab(9, 'chrome://newtab/'))), undefined);
 });
+
+test('findExistingTab applies the URL rules to the other tabs too', () => {
+    const rules = compileUrlRules([{
+        name: 'pull requests',
+        match: 'github.com/{owner}/{repo}/pull/{number:[0-9]+}/**',
+        key: 'https://github.com/{owner}/{repo}/pull/{number}',
+    }]);
+    const tabs = [tab(2, 'https://github.com/o/r/pull/12/files'), tab(9, 'https://github.com/o/r/pull/12')];
+    const key = duplicateKey(tabs[1], rules);
+    assert.equal(findExistingTab(tabs, 9, key, rules).id, 2);
+    assert.equal(findExistingTab(tabs, 9, key), undefined);
+});

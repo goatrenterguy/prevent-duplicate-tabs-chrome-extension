@@ -26,6 +26,7 @@ No build step is needed: the extension is plain JavaScript. The tests need no de
 * `https://example.com` and `https://example.com/` are the same page.
 * Query strings are compared, so different searches stay in separate tabs.
 * Sites where one page has several addresses can be handled by [URL matching rules](#url-matching-rules). None are set up out of the box.
+* By default only tabs that were just opened are checked: a link or search opened in a new tab, a link opened from another app, or an address typed into a new tab page. A tab counts as new until it finishes loading its first page, so redirects are still caught. Following a link or going back in a tab you are already using never closes it. Switch off "Only new tabs" in the popup to check every navigation in every tab, as older versions did.
 * When a tab arrives at a URL that another tab already shows, the tab that was already there is the one kept, and the arriving tab is closed. If several tabs already show it, you are switched to the oldest of them.
 * "Deduplicate existing tabs" keeps the oldest tab for each URL. Age comes from the tab id, which starts over when the browser does, so after a restart "oldest" means the tab that was restored first.
 * Incognito and normal windows are deduplicated separately, so you are never pulled across that boundary. This only matters if you allow the extension in incognito windows.
@@ -34,7 +35,7 @@ No build step is needed: the extension is plain JavaScript. The tests need no de
 * The existing tab you are switched to is not reloaded, so its scroll position and unsaved input stay as they were.
 * The toolbar badge shows the number of duplicate tabs that are currently open, or `OFF` while the extension is switched off.
 
-When you are switched to an existing tab, a large green "Switched to existing tab" notice appears on that page for a few seconds. The `scripting` permission and access to http(s) sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
+When you are switched to an existing tab, a small "Switched to existing tab" notice with the site's name appears at the top of that page for a couple of seconds, in light or dark to match your system. The `scripting` permission and access to http(s) sites are used only for this notice. It can't appear on pages where extensions can't run scripts, such as `chrome://` pages and the Chrome Web Store.
 
 ## URL matching rules
 

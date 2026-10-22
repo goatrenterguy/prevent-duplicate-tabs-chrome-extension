@@ -11,13 +11,16 @@ const backgroundSource = fs.readFileSync(path.join(__dirname, 'background.js'), 
 
 const tab = (id, url, extra = {}) => ({ id, url, incognito: false, pinned: false, windowId: 1, ...extra });
 
-function loadWorker(tabs, stored = {}) {
+function loadWorker(tabs, stored = {}, session = {}) {
     const actions = [];
     const badgeColors = [];
     const badgeTexts = [];
     const listeners = {};
     const chrome = {
-        storage: { local: { get: () => Promise.resolve(stored), set: values => { Object.assign(stored, values); return Promise.resolve(); } } },
+        storage: {
+            local: { get: () => Promise.resolve(stored), set: values => { Object.assign(stored, values); return Promise.resolve(); } },
+            session: { get: () => Promise.resolve(session), set: values => { Object.assign(session, values); return Promise.resolve(); } },
+        },
         action: {
             setBadgeBackgroundColor: ({ color }) => { badgeColors.push(color); return Promise.resolve(); },
             setBadgeText: ({ text }) => { badgeTexts.push(text); return Promise.resolve(); },
@@ -25,6 +28,10 @@ function loadWorker(tabs, stored = {}) {
         runtime: { onMessage: { addListener: fn => { listeners.message = fn; } } },
         tabs: {
             query: () => Promise.resolve(tabs),
+            get: id => {
+                const found = tabs.find(tab => tab.id === id);
+                return found ? Promise.resolve(found) : Promise.reject(new Error(`no tab ${id}`));
+            },
             update: (id, props) => {
                 actions.push(`activate ${id}${props.active ? '' : ' (without activating!)'}`);
                 return Promise.resolve({ id, windowId: 1 });
@@ -37,8 +44,8 @@ function loadWorker(tabs, stored = {}) {
             },
             onCreated: { addListener: fn => { listeners.created = fn; } },
             onUpdated: { addListener: fn => { listeners.updated = fn; } },
-            onRemoved: { addListener: () => {} },
-            onReplaced: { addListener: () => {} },
+            onRemoved: { addListener: fn => { listeners.removed = fn; } },
+            onReplaced: { addListener: fn => { listeners.replaced = fn; } },
         },
         windows: { update: () => Promise.resolve() },
         scripting: { executeScript: () => Promise.resolve([]) },
@@ -65,7 +72,7 @@ test('the worker starts up and puts the number of open duplicates on the badge',
     const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/'), tab(3, 'https://b.example/')]);
     await worker.settle();
     assert.deepEqual(worker.badgeTexts, ['1']);
-    assert.deepEqual(worker.badgeColors, ['#28a745']);
+    assert.deepEqual(worker.badgeColors, ['#0a84ff']);
     assert.deepEqual(worker.actions, []);
 });
 
@@ -78,21 +85,21 @@ test('the badge says OFF and greys out while the extension is switched off', asy
     await worker.settle();
     assert.equal(off.active, false);
     assert.equal(worker.badgeTexts.at(-1), 'OFF');
-    assert.equal(worker.badgeColors.at(-1), '#666666');
+    assert.equal(worker.badgeColors.at(-1), '#8e8e93');
 
     // Switching it back on restores the live count.
     const on = await send(worker, { action: 'SetActive', active: true });
     await worker.settle();
     assert.equal(on.active, true);
     assert.equal(worker.badgeTexts.at(-1), '1');
-    assert.equal(worker.badgeColors.at(-1), '#28a745');
+    assert.equal(worker.badgeColors.at(-1), '#0a84ff');
 });
 
 test('a worker that starts up switched off never shows a count', async () => {
     const worker = loadWorker([tab(1, 'https://a.example/'), tab(2, 'https://a.example/')], { active: false });
     await worker.settle();
     assert.deepEqual(worker.badgeTexts, ['OFF']);
-    assert.deepEqual(worker.badgeColors, ['#666666']);
+    assert.deepEqual(worker.badgeColors, ['#8e8e93']);
 });
 
 test('a duplicate is closed and the tab that was there first is activated', async () => {
@@ -201,4 +208,97 @@ test('rules that cannot be understood are refused and the old ones kept', async 
     assert.match(state.error, /broken/);
     assert.deepEqual(state.urlRules, [pullRequestRule]);
     assert.deepEqual(stored.urlRules, [pullRequestRule]);
+});
+
+test('a tab that only matches the arriving one through a rule is switched to', async () => {
+    const tabs = [tab(1, 'https://github.com/owner/repo/pull/12/files')];
+    const worker = loadWorker(tabs, { urlRules: [pullRequestRule] });
+    const arriving = tab(9, 'https://github.com/owner/repo/pull/12');
+    tabs.push(arriving);
+    await worker.listeners.created(arriving);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 9']);
+});
+
+test('a new tab that redirects to an open page is closed', async () => {
+    const tabs = [tab(1, 'https://a.example/'), tab(5, '')];
+    const worker = loadWorker(tabs);
+    await worker.settle();
+    await worker.listeners.created(tab(5, ''));
+    tabs[1].url = 'http://a.example/';
+    await worker.listeners.updated(5, { url: 'http://a.example/' }, tabs[1]);
+    tabs[1].url = 'https://a.example/';
+    await worker.listeners.updated(5, { url: 'https://a.example/' }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 5']);
+});
+
+test('an address typed into a new tab page is checked', async () => {
+    const tabs = [tab(1, 'https://a.example/'), tab(5, 'chrome://newtab/')];
+    const worker = loadWorker(tabs);
+    await worker.settle();
+    await worker.listeners.created(tab(5, 'chrome://newtab/'));
+    await worker.listeners.updated(5, { status: 'complete' }, tabs[1]);
+    tabs[1].url = 'https://a.example/';
+    await worker.listeners.updated(5, { url: 'https://a.example/' }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 5']);
+});
+
+test('a tab that has loaded a page is not closed when it navigates on', async () => {
+    const tabs = [tab(1, 'https://a.example/'), tab(5, 'https://b.example/')];
+    const worker = loadWorker(tabs);
+    await worker.settle();
+    await worker.listeners.created(tab(5, 'https://b.example/'));
+    await worker.listeners.updated(5, { status: 'complete' }, tabs[1]);
+    tabs[1].url = 'https://a.example/';
+    await worker.listeners.updated(5, { url: 'https://a.example/' }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+    assert.equal(worker.badgeTexts.at(-1), '1');
+});
+
+test('a tab that was open before the worker started is not closed when it navigates', async () => {
+    const tabs = [tab(1, 'https://a.example/'), tab(5, 'https://b.example/')];
+    const worker = loadWorker(tabs);
+    await worker.settle();
+    tabs[1].url = 'https://a.example/';
+    await worker.listeners.updated(5, { url: 'https://a.example/' }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, []);
+});
+
+test('new tabs are remembered across a worker restart', async () => {
+    const tabs = [tab(1, 'https://a.example/'), tab(5, '')];
+    const worker = loadWorker(tabs, {}, { newTabs: [5] });
+    await worker.settle();
+    tabs[1].url = 'https://a.example/';
+    await worker.listeners.updated(5, { url: 'https://a.example/' }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 5']);
+});
+
+test('with "only new tabs" switched off, any tab that navigates to an open page is closed', async () => {
+    const stored = {};
+    const tabs = [tab(1, 'https://a.example/'), tab(5, 'https://b.example/')];
+    const worker = loadWorker(tabs, stored);
+    await worker.settle();
+    const state = await send(worker, { action: 'SetOnlyNewTabs', onlyNewTabs: false });
+    assert.equal(state.onlyNewTabs, false);
+    assert.equal(stored.onlyNewTabs, false);
+    tabs[1].url = 'https://a.example/';
+    await worker.listeners.updated(5, { url: 'https://a.example/' }, tabs[1]);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 5']);
+});
+
+test('a prerendered tab swapped in for a new tab is checked', async () => {
+    const tabs = [tab(1, 'https://a.example/'), tab(5, 'chrome://newtab/')];
+    const worker = loadWorker(tabs);
+    await worker.settle();
+    await worker.listeners.created(tab(5, 'chrome://newtab/'));
+    tabs[1] = tab(6, 'https://a.example/');
+    await worker.listeners.replaced(6, 5);
+    await worker.settle();
+    assert.deepEqual(worker.actions, ['activate 1', 'close 6']);
 });

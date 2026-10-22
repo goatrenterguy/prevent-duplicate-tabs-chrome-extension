@@ -102,9 +102,11 @@ function planDeduplication(tabs, urlRules = []) {
 }
 
 // The tab to switch to when `currentTabId` turned out to be a duplicate: the
-// oldest other tab showing the same URL in the same incognito mode.
-function findExistingTab(tabs, currentTabId, key) {
+// oldest other tab showing the same URL in the same incognito mode. `key` has to
+// come from duplicateKey() with the same `urlRules`, or a tab that only matches
+// through a rule is never found.
+function findExistingTab(tabs, currentTabId, key, urlRules = []) {
     return tabs
-        .filter(tab => tab.id !== undefined && tab.id !== currentTabId && duplicateKey(tab) === key)
+        .filter(tab => tab.id !== undefined && tab.id !== currentTabId && duplicateKey(tab, urlRules) === key)
         .sort(byAge)[0];
 }

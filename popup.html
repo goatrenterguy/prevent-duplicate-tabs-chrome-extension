@@ -34,7 +34,7 @@
                 height: 18px; width: 18px; left: 2px; top: 2px;
                 background: white; border-radius: 50%; transition: .15s;
             }
-            input:checked + .slider { background-color: #34c759; }
+            input:checked + .slider { background-color: #0a84ff; }
             input:checked + .slider:before { transform: translateX(18px); }
             .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
             a { font-size: 13px; color: #1a73e8; text-decoration: none; }
@@ -73,6 +73,17 @@
         <div class="stat" id="counter">Duplicates prevented so far: 0.</div>
         <div class="hint">
             Opening a URL that is already open in another tab switches to that tab instead.
+        </div>
+        <hr />
+        <div class="row">
+            <span class="label">Only new tabs</span>
+            <label class="switch">
+                <input type="checkbox" id="onlyNewTabs" />
+                <span class="slider"></span>
+            </label>
+        </div>
+        <div class="hint">
+            On: only tabs you just opened are switched away from. Off: following a link or going back in any tab can close it, if that page is open elsewhere.
         </div>
         <hr />
         <div class="row">

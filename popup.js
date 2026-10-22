@@ -1,4 +1,5 @@
 const toggle = document.getElementById('toggle');
+const onlyNewTabsToggle = document.getElementById('onlyNewTabs');
 const stateLabel = document.getElementById('stateLabel');
 const rulesLabel = document.getElementById('rulesLabel');
 const openRules = document.getElementById('openRules');
@@ -6,8 +7,9 @@ const counter = document.getElementById('counter');
 const deduplicate = document.getElementById('deduplicate');
 const status = document.getElementById('status');
 
-function render({ active, urlRules, preventedDuplicatesCount }) {
+function render({ active, onlyNewTabs, urlRules, preventedDuplicatesCount }) {
     toggle.checked = active;
+    onlyNewTabsToggle.checked = onlyNewTabs;
     stateLabel.textContent = active ? 'Enabled' : 'Disabled';
     const ruleCount = Array.isArray(urlRules) ? urlRules.length : 0;
     rulesLabel.textContent = `URL matching rules: ${ruleCount === 0 ? 'none' : ruleCount}`;
@@ -31,6 +33,14 @@ const plural = count => (count === 1 ? 'tab' : 'tabs');
 toggle.addEventListener('change', async () => {
     try {
         render(await chrome.runtime.sendMessage({ action: 'SetActive', active: toggle.checked }));
+    } catch (e) {
+        showError(e);
+    }
+});
+
+onlyNewTabsToggle.addEventListener('change', async () => {
+    try {
+        render(await chrome.runtime.sendMessage({ action: 'SetOnlyNewTabs', onlyNewTabs: onlyNewTabsToggle.checked }));
     } catch (e) {
         showError(e);
     }

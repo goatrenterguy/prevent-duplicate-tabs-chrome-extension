@@ -2,14 +2,17 @@ importScripts('url-rules.js', 'dedupe.js');
 
 let preventedDuplicatesCount = 0;
 let active = true;
+// When on, only tabs that were just opened are switched away from. When off,
+// any tab that navigates to an already open page is, as in older versions.
+let onlyNewTabs = true;
 // The URL matching rules as written in the options page, and compiled.
 let urlRules = [];
 let compiledUrlRules = [];
 
-// The badge counts in green while duplicates are being prevented, and says OFF
-// in grey while the extension is switched off.
-const BADGE_ACTIVE_COLOR = '#28a745';
-const BADGE_OFF_COLOR = '#666666';
+// The badge counts in blue (the same blue as the "switched" notice) while
+// duplicates are being prevented, and says OFF in grey while switched off.
+const BADGE_ACTIVE_COLOR = '#0a84ff';
+const BADGE_OFF_COLOR = '#8e8e93';
 
 // Badge bookkeeping: the recount generation and what the badge currently shows.
 let badgeGeneration = 0;
@@ -27,14 +30,30 @@ const tabsBeingHandled = new Set();
 // freshly queried tab list.
 const queueByKey = new Map();
 
+// Tabs that were opened and have not finished loading a real page yet: a link or
+// search opened in a new tab, a link from another app, or a new tab page that an
+// address is being typed into. With `onlyNewTabs` on these are the only tabs
+// that are ever closed, so following a link or going back in a tab you are
+// already using never closes it. Loading a page ends a tab's time as a new tab,
+// which still lets redirects (http to https, link shorteners) be caught. Kept
+// in chrome.storage.session so a worker restart in the middle of a page load
+// does not forget them.
+const newTabs = new Set();
+const newTabsReady = chrome.storage.session.get('newTabs').then(stored => {
+    (stored.newTabs ?? []).forEach(id => newTabs.add(id));
+}).catch(e => {
+    console.warn('Prevent Duplicate Tabs: could not read the new tabs', e);
+});
+
 // MV3 service workers can be terminated and restarted at any time, so the
 // on/off switch, URL rules and counter are persisted in chrome.storage.local.
 // Everything that reads or writes them awaits `stateReady` first: a write must
 // never land before the persisted values have been loaded (that would overwrite
 // them with stale defaults), and a tab event must never be judged against the
 // defaults either.
-const stateReady = chrome.storage.local.get(['active', 'urlRules', 'preventedDuplicatesCount']).then(stored => {
+const stateReady = chrome.storage.local.get(['active', 'onlyNewTabs', 'urlRules', 'preventedDuplicatesCount']).then(stored => {
     active = stored.active ?? true;
+    onlyNewTabs = stored.onlyNewTabs ?? true;
     preventedDuplicatesCount = stored.preventedDuplicatesCount ?? 0;
     try {
         compiledUrlRules = compileUrlRules(stored.urlRules ?? []);
@@ -63,6 +82,16 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 sendResponse(currentState());
             })
             .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the extension', e));
+        return true;
+    }
+    if (request.action === 'SetOnlyNewTabs') {
+        void stateReady
+            .then(() => {
+                onlyNewTabs = Boolean(request.onlyNewTabs);
+                persistState();
+                sendResponse(currentState());
+            })
+            .catch(e => console.warn('Prevent Duplicate Tabs: could not switch the new tabs option', e));
         return true;
     }
     if (request.action === 'SetUrlRules') {
@@ -111,29 +140,63 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 // idle shutdown, which makes the extension look like it only works sometimes.
 chrome.tabs.onCreated.addListener(async newTab => {
     void updateBadge();
+    await newTabsReady;
+    setNewTab(newTab.id, true);
     await stateReady;
     if (!active) return;
     await verifyAndDeduplicate(newTab);
 });
 
-chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
-    if (changeInfo.url) {
-        void updateBadge();
-        await stateReady;
-        if (!active) return;
-        await verifyAndDeduplicate(tab);
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (!changeInfo.url && changeInfo.status !== 'complete') return;
+    await newTabsReady;
+    const isNew = newTabs.has(tabId);
+    // A new tab page or about:blank does not count as a loaded page: an address
+    // may still be typed into it.
+    if (changeInfo.status === 'complete' && duplicateKey(tab) !== null) {
+        setNewTab(tabId, false);
     }
+    if (!changeInfo.url) return;
+    void updateBadge();
+    await stateReady;
+    if (!active || (onlyNewTabs && !isNew)) return;
+    await verifyAndDeduplicate(tab);
 });
 
 // Tabs being closed (by the user or by this extension) and prerender swaps
 // change how many duplicates are open, so recount for those too.
-chrome.tabs.onRemoved.addListener(() => {
+chrome.tabs.onRemoved.addListener(async tabId => {
     void updateBadge();
+    await newTabsReady;
+    setNewTab(tabId, false);
 });
 
-chrome.tabs.onReplaced.addListener(() => {
+// Chrome can swap a new tab for a prerendered one when an address typed into it
+// was already loaded in the background. The swapped-in tab arrives on its final
+// URL without an update event, so it is checked here.
+chrome.tabs.onReplaced.addListener(async (addedTabId, removedTabId) => {
     void updateBadge();
+    await newTabsReady;
+    const wasNew = newTabs.has(removedTabId);
+    setNewTab(removedTabId, false);
+    if (!wasNew) return;
+    setNewTab(addedTabId, true);
+    await stateReady;
+    if (!active) return;
+    const added = await chrome.tabs.get(addedTabId).catch(() => undefined);
+    if (added) await verifyAndDeduplicate(added);
 });
+
+function setNewTab(tabId, isNew) {
+    if (tabId === undefined || isNew === newTabs.has(tabId)) return;
+    if (isNew) {
+        newTabs.add(tabId);
+    } else {
+        newTabs.delete(tabId);
+    }
+    chrome.storage.session.set({ newTabs: [...newTabs] })
+        .catch(e => console.warn('Prevent Duplicate Tabs: could not save the new tabs', e));
+}
 
 void updateBadge();
 
@@ -187,7 +250,7 @@ async function switchToExistingTab(currentTabId, key) {
         // is now looking at.
         if (!current || current.pinned || duplicateKey(current, compiledUrlRules) !== key) return;
 
-        const existing = findExistingTab(tabs, currentTabId, key);
+        const existing = findExistingTab(tabs, currentTabId, key, compiledUrlRules);
         if (!existing) return;
 
         await chrome.tabs.update(existing.id, { active: true });
@@ -203,55 +266,135 @@ async function switchToExistingTab(currentTabId, key) {
     }
 }
 
-// Shows a large green "Switched to existing tab" notice on the page for a few
-// seconds. Pages where scripts cannot run (chrome://, the Chrome Web Store, ...)
-// are skipped silently; switching to the existing tab still happens.
+// Shows a small "Switched to existing tab" pill at the top of the page for a
+// couple of seconds, in light or dark to match the system. Pages where scripts
+// cannot run (chrome://, the Chrome Web Store, ...) are skipped silently;
+// switching to the existing tab still happens.
 function showSwitchedNotice(tabId) {
     chrome.scripting.executeScript({
         target: { tabId },
         func: () => {
             const id = '__prevent_duplicate_tabs_notice__';
             document.getElementById(id)?.remove();
-            const el = document.createElement('div');
-            el.id = id;
-            el.textContent = 'Switched to existing tab';
-            Object.assign(el.style, {
-                position: 'fixed',
-                top: '32px',
-                right: '32px',
-                zIndex: '2147483647',
-                padding: '16px 24px',
-                background: 'rgba(52, 199, 89, 0.95)',
-                color: 'white',
-                font: "500 26px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-                borderRadius: '16px',
-                boxShadow: '0 8px 28px rgba(0, 0, 0, 0.18)',
-                pointerEvents: 'none',
-                opacity: '0',
-                transform: 'translateY(-12px)',
-                transition: 'opacity 140ms ease, transform 140ms ease',
-            });
-            document.documentElement.appendChild(el);
-            requestAnimationFrame(() => {
-                el.style.opacity = '1';
-                el.style.transform = 'translateY(0)';
-            });
+
+            // The notice lives in a shadow root so the page's CSS cannot restyle
+            // it. Its styles go in a constructed stylesheet and its content is
+            // built node by node, because pages with a strict CSP or Trusted
+            // Types block inline <style> and innerHTML.
+            const host = document.createElement('div');
+            host.id = id;
+            host.style.cssText = 'all: initial; position: fixed; top: 14px; left: 50%; '
+                + 'transform: translateX(-50%); z-index: 2147483647; pointer-events: none;';
+            const root = host.attachShadow({ mode: 'closed' });
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(`
+                .toast {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 7px 14px 7px 8px;
+                    font: 500 13px/18px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+                    letter-spacing: -0.01em;
+                    white-space: nowrap;
+                    color: #1d1d1f;
+                    background: rgba(255, 255, 255, 0.86);
+                    backdrop-filter: blur(20px) saturate(180%);
+                    -webkit-backdrop-filter: blur(20px) saturate(180%);
+                    border: 0.5px solid rgba(0, 0, 0, 0.1);
+                    border-radius: 999px;
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.1);
+                    opacity: 0;
+                    transform: translateY(-6px) scale(0.97);
+                    transition: opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+                }
+                .toast.shown { opacity: 1; transform: none; }
+                .toast.leaving {
+                    transition-duration: 160ms;
+                    transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+                }
+                .icon {
+                    flex: none;
+                    display: grid;
+                    place-items: center;
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    background: #0a84ff;
+                }
+                .host { color: #86868b; }
+                @media (prefers-color-scheme: dark) {
+                    .toast {
+                        color: #f5f5f7;
+                        background: rgba(44, 44, 46, 0.86);
+                        border-color: rgba(255, 255, 255, 0.12);
+                        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+                    }
+                    .host { color: #98989d; }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .toast, .toast.shown { transform: none; transition: opacity 150ms linear; }
+                }
+            `);
+            root.adoptedStyleSheets = [sheet];
+
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.setAttribute('role', 'status');
+
+            // A small "return" arrow: you were sent back to a tab you already had.
+            const svgNs = 'http://www.w3.org/2000/svg';
+            const icon = document.createElementNS(svgNs, 'svg');
+            icon.setAttribute('viewBox', '0 0 16 16');
+            icon.setAttribute('width', '12');
+            icon.setAttribute('height', '12');
+            for (const d of ['M6 4.5 3 7.5l3 3', 'M3.5 7.5H10a3 3 0 0 1 0 6H8.5']) {
+                const path = document.createElementNS(svgNs, 'path');
+                path.setAttribute('d', d);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', 'white');
+                path.setAttribute('stroke-width', '1.8');
+                path.setAttribute('stroke-linecap', 'round');
+                path.setAttribute('stroke-linejoin', 'round');
+                icon.append(path);
+            }
+            const iconWrap = document.createElement('span');
+            iconWrap.className = 'icon';
+            iconWrap.append(icon);
+
+            const label = document.createElement('span');
+            label.textContent = 'Switched to existing tab';
+            toast.append(iconWrap, label);
+            if (location.hostname) {
+                const hostLabel = document.createElement('span');
+                hostLabel.className = 'host';
+                hostLabel.textContent = location.hostname.replace(/^www\./, '');
+                toast.append(hostLabel);
+            }
+
+            root.append(toast);
+            document.documentElement.append(host);
+            // Read layout once so the starting styles apply before the
+            // transition to .shown begins.
+            toast.getBoundingClientRect();
+            toast.classList.add('shown');
             setTimeout(() => {
-                el.style.opacity = '0';
-                el.style.transform = 'translateY(-12px)';
-                setTimeout(() => el.remove(), 240);
-            }, 2400);
+                toast.classList.add('leaving');
+                toast.classList.remove('shown');
+                setTimeout(() => host.remove(), 200);
+            }, 2200);
         },
     }).catch(() => {});
 }
 
 function currentState() {
-    return { active, urlRules, preventedDuplicatesCount };
+    return { active, onlyNewTabs, urlRules, preventedDuplicatesCount };
 }
 
 function persistState() {
     chrome.storage.local.set({
         active,
+        onlyNewTabs,
         urlRules,
         preventedDuplicatesCount,
     }).catch(e => console.warn('Prevent Duplicate Tabs: could not save the state', e));
